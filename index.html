@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Ultimate CPU Scheduler</title>
+
+<style>
+body{
+    font-family:Segoe UI;
+    margin:0;
+    background: radial-gradient(circle at top,#0f2027,#203a43,#2c5364);
+    color:white;
+}
+
+/* Glass Card */
+.container{
+    width:95%;
+    margin:20px auto;
+    background:rgba(255,255,255,0.08);
+    backdrop-filter:blur(15px);
+    padding:20px;
+    border-radius:15px;
+    box-shadow:0 0 30px rgba(0,0,0,0.5);
+}
+
+h1{text-align:center;margin-bottom:15px;}
+
+input,select,button{
+    padding:7px;
+    margin:5px;
+    border-radius:6px;
+    border:none;
+}
+
+button{
+    background:#00c6ff;
+    color:white;
+    cursor:pointer;
+    font-weight:bold;
+}
+button:hover{background:#0072ff;}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+    background:white;
+    color:black;
+}
+th{
+    background:#0072ff;
+    color:white;
+}
+th,td{
+    padding:6px;
+    text-align:center;
+}
+
+/* Gantt */
+#gantt{
+    display:flex;
+    align-items:flex-end;
+    margin-top:20px;
+    flex-wrap:wrap;
+}
+.block{
+    padding:12px 16px;
+    margin:2px;
+    color:white;
+    border-radius:6px;
+    font-weight:bold;
+    position:relative;
+}
+.time{
+    font-size:10px;
+    position:absolute;
+    bottom:-14px;
+    left:2px;
+}
+
+/* Result */
+.result{
+    margin-top:15px;
+    font-size:18px;
+    font-weight:bold;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>Ultimate CPU Scheduling Simulator</h1>
+
+Processes:
+<input type="number" id="n" value="4">
+<button onclick="createTable()">Create</button>
+
+Algorithm:
+<select id="algo" onchange="toggleTQ()">
+<option value="FCFS">FCFS</option>
+<option value="SJF">SJF</option>
+<option value="SRTF">SRTF (Preemptive SJF)</option>
+<option value="PRIORITY">Priority</option>
+<option value="PPRIORITY">Priority Preemptive</option>
+<option value="RR">Round Robin</option>
+</select>
+
+<span id="tqBox">
+Time Quantum:
+<input type="number" id="tq" value="2">
+</span>
+
+<button onclick="run()">Run</button>
+
+<div id="table"></div>
+
+<h3>Gantt Chart</h3>
+<div id="gantt"></div>
+
+<h3>Process Results</h3>
+<div id="ptable"></div>
+
+<div id="avg" class="result"></div>
+
+</div>
+
+<script>
+const colors=["#ff4d4d","#4CAF50","#ff9800","#9c27b0","#03a9f4","#e91e63","#00bcd4"];
+
+function toggleTQ(){
+    document.getElementById("tqBox").style.display =
+        document.getElementById("algo").value=="RR" ? "inline" : "none";
+}
+
+function createTable(){
+    let n=nval();
+    let html="<table><tr><th>P</th><th>AT</th><th>BT</th><th>Priority</th></tr>";
+    for(let i=0;i<n;i++){
+        html+=`<tr>
+        <td>P${i}</td>
+        <td><input id="at${i}" value="0"></td>
+        <td><input id="bt${i}" value="1"></td>
+        <td><input id="pr${i}" value="1"></td>
+        </tr>`;
+    }
+    html+="</table>";
+    document.getElementById("table").innerHTML=html;
+}
+
+function nval(){ return +document.getElementById("n").value; }
+
+function getP(){
+    let p=[];
+    for(let i=0;i<nval();i++){
+        p.push({
+            id:i,
+            at:+at(i),
+            bt:+bt(i),
+            pr:+pr(i),
+            rt:+bt(i)
+        });
+    }
+    return p;
+}
+function at(i){return document.getElementById("at"+i).value;}
+function bt(i){return document.getElementById("bt"+i).value;}
+function pr(i){return document.getElementById("pr"+i).value;}
+
+function drawGantt(order,timeMarks){
+    let g=document.getElementById("gantt");
+    g.innerHTML="";
+    for(let i=0;i<order.length;i++){
+        let d=document.createElement("div");
+        d.className="block";
+        d.style.background=colors[order[i]%colors.length];
+        d.innerHTML="P"+order[i]+"<div class='time'>"+timeMarks[i]+"</div>";
+        g.appendChild(d);
+    }
+}
+
+function showTable(p){
+    let html="<table><tr><th>P</th><th>CT</th><th>TAT</th><th>WT</th></tr>";
+    let tw=0,tt=0;
+    p.forEach(x=>{
+        html+=`<tr><td>P${x.id}</td><td>${x.ct}</td><td>${x.tat}</td><td>${x.wt}</td></tr>`;
+        tw+=x.wt; tt+=x.tat;
+    });
+    html+="</table>";
+    document.getElementById("ptable").innerHTML=html;
+    document.getElementById("avg").innerHTML=
+        "Avg WT: "+(tw/p.length).toFixed(2)+" | Avg TAT: "+(tt/p.length).toFixed(2);
+}
+
+function run(){
+    let algo=document.getElementById("algo").value;
+    let tq=+document.getElementById("tq").value;
+    let p=getP();
+    let time=0,order=[],tmarks=[];
+
+    if(algo=="FCFS"){
+        p.sort((a,b)=>a.at-b.at);
+        p.forEach(proc=>{
+            time=Math.max(time,proc.at);
+            order.push(proc.id); tmarks.push(time);
+            time+=proc.bt;
+            proc.ct=time;
+        });
+    }
+
+    else if(algo=="SJF" || algo=="PRIORITY"){
+        let done=0;
+        while(done<p.length){
+            let avail=p.filter(x=>!x.done && x.at<=time);
+            if(avail.length==0){time++;continue;}
+            avail.sort((a,b)=>algo=="SJF"?a.bt-b.bt:a.pr-b.pr);
+            let proc=avail[0];
+            order.push(proc.id); tmarks.push(time);
+            time+=proc.bt;
+            proc.ct=time;
+            proc.done=true;
+            done++;
+        }
+    }
+
+    else if(algo=="SRTF" || algo=="PPRIORITY"){
+        let done=0;
+        while(done<p.length){
+            let avail=p.filter(x=>x.at<=time && x.rt>0);
+            if(avail.length==0){time++;continue;}
+            avail.sort((a,b)=>algo=="SRTF"?a.rt-b.rt:a.pr-b.pr);
+            let proc=avail[0];
+            order.push(proc.id); tmarks.push(time);
+            proc.rt--;
+            time++;
+            if(proc.rt==0){
+                proc.ct=time;
+                done++;
+            }
+        }
+    }
+
+    else if(algo=="RR"){
+        p.sort((a,b)=>a.at-b.at);
+        let q=[],i=0;
+        while(true){
+            while(i<p.length && p[i].at<=time) q.push(p[i++]);
+            if(q.length==0){
+                if(i>=p.length)break;
+                time++; continue;
+            }
+            let proc=q.shift();
+            order.push(proc.id); tmarks.push(time);
+            let exec=Math.min(tq,proc.rt);
+            proc.rt-=exec;
+            time+=exec;
+            while(i<p.length && p[i].at<=time) q.push(p[i++]);
+            if(proc.rt>0) q.push(proc);
+            else proc.ct=time;
+        }
+    }
+
+    // calculate WT & TAT
+    p.forEach(x=>{
+        x.tat=x.ct-x.at;
+        x.wt=x.tat-x.bt;
+    });
+
+    drawGantt(order,tmarks);
+    showTable(p);
+}
+
+createTable();
+toggleTQ();
+</script>
+
+</body>
+</html>
